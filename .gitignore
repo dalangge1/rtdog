@@ -1,0 +1,11 @@
+.ipynb_checkpoints/
+ckpt/
+data
+logdir
+sum
+*.pb
+*.pyc
+*.ipynb
+*.jpg
+*.png
+*.jpeg
