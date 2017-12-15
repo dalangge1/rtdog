@@ -9,7 +9,7 @@ BATCH_SIZE = 10000
 EPOCHS = 1000
 TFRECORD_FILE = 'data/train.tfrecord'
 TFRECORD_VAL_FILE = 'data/validation.tfrecord'
-LEARNING_RATE = 0.01
+LEARNING_RATE = 0.05
 
 def fc_layer(x, in_dim, out_dim, name=None):
     '''Input : pool_3 from the inception model'''
@@ -42,7 +42,8 @@ def parse_function(proto):
 with tf.name_scope("datasets"):
     train_dataset = tf.data.TFRecordDataset([TFRECORD_FILE])\
         .map(parse_function)\
-        .batch(BATCH_SIZE)
+        .batch(BATCH_SIZE) \
+        .shuffle(100)
 
     val_dataset = tf.data.TFRecordDataset([TFRECORD_VAL_FILE]) \
         .map(parse_function) \
@@ -57,17 +58,16 @@ label_one_hot = tf.placeholder(dtype=tf.int32, shape=[None, NUM_CLASSES], name="
 
 fc_out = fc_layer(inception_out, 2048, 5000)
 
-fc_out = fc_layer(fc_out, 5000, 3000)
-fc_out = fc_layer(fc_out, 3000, 3000)
-fc_out = fc_layer(fc_out, 3000, 1000)
-fc_out = fc_layer(fc_out, 1000, NUM_CLASSES)
+fc_out = fc_layer(fc_out, 5000, 5000)
+fc_out = fc_layer(fc_out, 5000, 5000)
+fc_out = fc_layer(fc_out, 5000, NUM_CLASSES)
 
 with tf.name_scope("cross_entropy"):
     cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=label_one_hot, logits=fc_out),
                                    name="CrossEntropy")
 
 with tf.name_scope("train"):
-    train_step = tf.train.AdamOptimizer(LEARNING_RATE).minimize(cross_entropy)
+    train_step = tf.train.AdamOptimizer(LEARNING_RATE, epsilon=0.01).minimize(cross_entropy)
 
 with tf.name_scope("accuracy"):
     acc, acc_op = tf.metrics.accuracy(labels=tf.argmax(label_one_hot, 1), predictions=tf.argmax(fc_out, 1), name="acc_metric")
@@ -93,11 +93,12 @@ def compute_val_acc(sess):
 
 i = 0
 with tf.Session() as sess:
-    writer = tf.summary.FileWriter('sum/summaries_fc=5k,3k,3k,120,lr=0.01, bs=10000', sess.graph)
+    writer = tf.summary.FileWriter('sum/summaries_da_fc=5k,5k,120,lr=0.05, bs=10000, epsilon=0.01', sess.graph)
     sess.run(tf.global_variables_initializer())
     sess.run(tf.local_variables_initializer())
 
     for e in range(EPOCHS):
+        val_acc = compute_val_acc(sess)
         try:
             sess.run(train_iter.initializer)
             while True:
@@ -109,8 +110,6 @@ with tf.Session() as sess:
 
                 writer.add_summary(merged, i)
 
-
-                val_acc = compute_val_acc(sess)
 
                 sys.stdout.write("\rEpoch: {}, Step: {}, Train loss: {:0.5f}, Accuracy: {:0.5f}".format(e, i, xen, val_acc))
                 sys.stdout.flush()
