@@ -43,25 +43,6 @@ class Transf(Enum):
     ROT_R = 5 # rotate right by ROTATION_AMOUNT
 
 
-def get_color_mean_std_dev():
-    '''Runs over all the data and returns the mean and std dev for each color R, G, B'''
-    mean = np.zeros(3)
-    std_dev = np.zeros(3)
-    i = 0
-    for fn in os.listdir(IMAGES_DIR):
-        i += 1
-        img = np.array(Image.open(os.path.join(IMAGES_DIR, fn)))
-        mean += np.mean(img, (0, 1))
-        std_dev += np.mean(np.square(img), (0, 1))
-
-    mean /= i
-    std_dev /= i - 1
-    std_dev -= np.square(mean)
-    std_dev = np.sqrt(std_dev)
-
-    return mean, std_dev
-
-
 def net():
     '''Returns : input tensor, output tensor, cut accordingly to constants above'''
     with tf.gfile.GFile(FROZEN_GRAPH, 'rb') as f:
@@ -158,83 +139,83 @@ def transform(img, transform):
     else:
         return img
 
-
-print(
-"""
-Generating TFRecords...
-
-Parameters:
- -- Frozen graph path: {}
- -- Input tensor: {}
- -- Output tensor: {}
- -- Labels file: {}
- -- Images directory: {}
- -- Validation size: {}
-
-Will be generated:
- -- Train TFRecord: {}
- -- Validation TFRecord: {}
- -- Labels map file: {}
-""".format(FROZEN_GRAPH, IN_TENSOR, OUT_TENSOR, LABELS_FILE, IMAGES_DIR,
-           VALIDATION_FRAC, TFRECORD_TRAIN_FILE, TFRECORD_VAL_FILE, LABELS_MAP))
-
-
-encoder = label_encoder()
-inpt, outpt = net()
-
-with open(LABELS_FILE, 'r') as fp:
-    lines = fp.readlines()
-
-total_lines = len(lines)
-
-for index, dataset in enumerate(get_labels_datasets()):
-    record = TFRECORD_TRAIN_FILE if not index else TFRECORD_VAL_FILE
-    print("Generating {}".format(record))
-
-    with tf.Session() as sess, tf.python_io.TFRecordWriter(record) as writer:
-
-        i = 0
-        if not index:
-            total = total_lines * (1- VALIDATION_FRAC) * len([t for t in Transf])
-        else:
-            total = total_lines * VALIDATION_FRAC
-
-        next_it = dataset.make_one_shot_iterator().get_next()
+if __name__ == "__main__":
+    print(
+    """
+    Generating TFRecords...
+    
+    Parameters:
+     -- Frozen graph path: {}
+     -- Input tensor: {}
+     -- Output tensor: {}
+     -- Labels file: {}
+     -- Images directory: {}
+     -- Validation size: {}
+    
+    Will be generated:
+     -- Train TFRecord: {}
+     -- Validation TFRecord: {}
+     -- Labels map file: {}
+    """.format(FROZEN_GRAPH, IN_TENSOR, OUT_TENSOR, LABELS_FILE, IMAGES_DIR,
+               VALIDATION_FRAC, TFRECORD_TRAIN_FILE, TFRECORD_VAL_FILE, LABELS_MAP))
 
 
-        try:
-            while True:
-                i += 1
-                sys.stdout.write('\r{:0.4f} % : {}'.format(i / total * 100, i))
-                sys.stdout.flush()
+    encoder = label_encoder()
+    inpt, outpt = net()
 
-                fn, label, t = sess.run(next_it)
+    with open(LABELS_FILE, 'r') as fp:
+        lines = fp.readlines()
 
-                # decode because fn and labels are in binary form
-                fn = fn.decode('ascii')
-                label = label.decode('ascii')
+    total_lines = len(lines)
 
+    for index, dataset in enumerate(get_labels_datasets()):
+        record = TFRECORD_TRAIN_FILE if not index else TFRECORD_VAL_FILE
+        print("Generating {}".format(record))
 
-                img_pil = Image.open(fn)
+        with tf.Session() as sess, tf.python_io.TFRecordWriter(record) as writer:
 
-                img = transform(img_pil, Transf(t))
+            i = 0
+            if not index:
+                total = total_lines * (1- VALIDATION_FRAC) * len([t for t in Transf])
+            else:
+                total = total_lines * VALIDATION_FRAC
 
-
-
-                label_id = encoder(label)
-
-                # run the image through the net
-                #img = tf.gfile.GFile(fn, 'rb').read()
-
-                net_output = sess.run(outpt, feed_dict={inpt: img})
+            next_it = dataset.make_one_shot_iterator().get_next()
 
 
-                # write (label, output) to tfrecord
-                example = tf.train.Example(features=tf.train.Features(feature={
-                    'label_id': tf.train.Feature(int64_list=tf.train.Int64List(value=[label_id])),
-                    'model_output': tf.train.Feature(bytes_list=tf.train.BytesList(value=[net_output[0].tostring()]))}))
+            try:
+                while True:
+                    i += 1
+                    sys.stdout.write('\r{:0.4f} % : {}'.format(i / total * 100, i))
+                    sys.stdout.flush()
 
-                writer.write(example.SerializeToString())
+                    fn, label, t = sess.run(next_it)
 
-        except tf.errors.OutOfRangeError:
-            print("\nFinished !\n")
+                    # decode because fn and labels are in binary form
+                    fn = fn.decode('ascii')
+                    label = label.decode('ascii')
+
+
+                    img_pil = Image.open(fn)
+
+                    img = transform(img_pil, Transf(t))
+
+
+
+                    label_id = encoder(label)
+
+                    # run the image through the net
+                    #img = tf.gfile.GFile(fn, 'rb').read()
+
+                    net_output = sess.run(outpt, feed_dict={inpt: img})
+
+
+                    # write (label, output) to tfrecord
+                    example = tf.train.Example(features=tf.train.Features(feature={
+                        'label_id': tf.train.Feature(int64_list=tf.train.Int64List(value=[label_id])),
+                        'model_output': tf.train.Feature(bytes_list=tf.train.BytesList(value=[net_output[0].tostring()]))}))
+
+                    writer.write(example.SerializeToString())
+
+            except tf.errors.OutOfRangeError:
+                print("\nFinished !\n")
